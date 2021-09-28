@@ -498,7 +498,7 @@ def decay_lr():
 
 @ex.capture(prefix='dataset')
 def get_dataset(na_thres, datapath, overwrite, horizon, data_sources, min_length, max_length, split, num_obs_thres):
-    print('USING SPLIT {}'.format(split))    
+    print('USING SPLIT {}, HORIZON {}'.format(split,horizon))    
     datapath += 'mgp-tcn-datadump_'+'_'.join([str(el) for el in data_sources])+'_na_thres_{}_min_length_{}_max_length_{}_horizon_0_split_{}.pkl'.format(na_thres, min_length, max_length, split)
     if (overwrite or not os.path.isfile(datapath) ): #check if data was not prepared and loaded before:
         if overwrite:
@@ -681,7 +681,8 @@ def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kern
     #Experiment for trying to reproduce randomness..
     tf.set_random_seed(_seed)
 
-    sess = tf.Session()
+    session_config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
+    sess = tf.Session(config=session_config)
 
     #define decaying learning rate:
     global_step = tf.Variable(0, trainable=False) #Cave, had to add it to Adam loss min()!
