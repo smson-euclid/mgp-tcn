@@ -15,16 +15,16 @@ if [ ! -d "$prj_dir" ]; then
     exit 1   
 fi
 
-if [ ! -d "$prj_dir/code" ]; then
-    echo 'create code directory' >> logfile.log    
-    mkdir $prj_dir/code
+if [ ! -d "$prj_dir/src" ]; then
+    echo 'create src directory' >> logfile.log    
+    mkdir $prj_dir/src
 fi
-if [ ! -d "$prj_dir/code/query" ]; then
+if [ ! -d "$prj_dir/src/query" ]; then
     echo 'create query directory' >> logfile.log
-    mkdir $prj_dir/code/query
+    mkdir $prj_dir/src/query
 fi
 
-script_dir=$prj_dir/code/query
+script_dir=$prj_dir/src/query
 
 if [ ! -d "$prj_dir/output" ]; then
     echo 'create output directory' >> logfile.log    

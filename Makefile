@@ -9,7 +9,7 @@ CONFIGS = $(foreach FILE,$(CONFIG_FILES),$(basename $(notdir $(FILE))))
 EXPERIMENT_TARGETS = $(foreach CONFIG,$(CONFIGS),$(EXPERIMENTS_PATH)/$(CONFIG))
 
 MYSQL_DATABASE := mimic
-MYSQL_USER := <Username>
+MYSQL_USER := postgres
 
 
 .PHONY = run_experiments query
