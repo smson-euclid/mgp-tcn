@@ -500,6 +500,7 @@ def decay_lr():
 def get_dataset(na_thres, datapath, overwrite, horizon, data_sources, min_length, max_length, split, num_obs_thres):
     print('USING SPLIT {}, HORIZON {}'.format(split,horizon))    
     datapath += 'mgp-tcn-datadump_'+'_'.join([str(el) for el in data_sources])+'_na_thres_{}_min_length_{}_max_length_{}_horizon_0_split_{}.pkl'.format(na_thres, min_length, max_length, split)
+    # datapath += 'mgp-tcn-datadump_'+'_'.join([str(el) for el in data_sources])+'_na_thres_{}_min_length_{}_max_length_{}_horizon_0_split_{}_new_extend.pkl'.format(na_thres, min_length, max_length, split)
     if (overwrite or not os.path.isfile(datapath) ): #check if data was not prepared and loaded before:
         if overwrite:
             print('Overwriting mode: running prepro script, dumping and loading data..')
@@ -572,6 +573,9 @@ def dataset_statistics(na_thres, datapath, horizon, data_sources, min_length, ma
 @ex.main
 def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kernel_size, n_mc_smps, dropout, reduction_dim, batch_size, learning_rate, decay_learning_rate,
                 training_iters, time_reset, l1_filter_reg, drop_first_res, L1_penalty, L2_penalty, pad_before, _rnd, _seed, _run, dataset):
+    
+    log_file = dataset['LOG_FILE']
+
     #Parameters (hard-coded for prototyping)
     if len(_run.observers) > 0:
          checkpoint_path = os.path.join(_run.observers[0].dir, 'model_checkpoints')
@@ -648,12 +652,17 @@ def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kern
     case_prev = labels_tr.sum()/float(len(labels_tr)) #get prevalence of cases in train dataset
     class_imb = 1/case_prev #class imbalance to use as class weight if losstype='weighted'
 
+    # write_file = open(log_file,'a+')
+    # write_file.write("{} {} {} {}\n".format(dataset['split'], dataset['horizon'], labels_tr.shape, labels_va.shape))
+    # write_file.close()
+    # return
 
     print("data fully setup!")    
     sys.stdout.flush()
 
-    #print('EXITING AFTER LOADING DATA')
-    #sys.exit()
+
+    # print('EXITING AFTER LOADING DATA')
+    # sys.exit()
     
     #####
     ##### Setup model and graph
@@ -681,8 +690,9 @@ def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kern
     #Experiment for trying to reproduce randomness..
     tf.set_random_seed(_seed)
 
-    session_config = tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
-    sess = tf.Session(config=session_config)
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(config=config)
 
     #define decaying learning rate:
     global_step = tf.Variable(0, trainable=False) #Cave, had to add it to Adam loss min()!
@@ -739,6 +749,9 @@ def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kern
     # Define optimization problem
     if losstype=='weighted':
         loss_fit = tf.reduce_sum(tf.nn.weighted_cross_entropy_with_logits(logits=preds,targets=O_dupe_onehot, pos_weight=class_imb))
+    if losstype=='sq_hinge':
+        h = tf.keras.losses.SquaredHinge()
+        loss_fit = h(O_dupe_onehot,preds)
     if L2_penalty is not None:
         loss_reg = compute_global_l2() # normalized per weight! hence, use large lambda!
         loss = loss_fit + loss_reg*L2_penalty
@@ -787,6 +800,7 @@ def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kern
 
     total_batches = 0
     best_val = 0
+    best_auroc = 0
     for i in range(training_iters):
         #print max memory usage up to now
         print('Max Memory Usage up to now')
@@ -827,6 +841,11 @@ def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kern
             
             print("Batch "+"{:d}".format(batch)+"/"+"{:d}".format(num_batches)+\
                   ", took: "+"{:.3f}".format(time()-batch_start)+", loss: "+"{:.5f}".format(loss_))
+
+            write_file = open(log_file,'a+')
+            write_file.write("train_loss,{},{},{:d},{:.5f}\n".format(dataset['split'], dataset['horizon'], i, loss_))
+            write_file.close()
+
             sys.stdout.flush()
             batch += 1; total_batches += 1
 
@@ -851,7 +870,7 @@ def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kern
                     try:        
                         va_probs,va_acc,va_loss = sess.run([probs,accuracy,loss],va_feed_dict, options=run_options)     
                     except Exception as e:
-                        traceback.format_exc()
+                        traceback.formats_exc()
                         print('Error occured in tensorflow during evaluation:', e)
                         break
                     #append current validation auprc to array of entire validation set
@@ -860,19 +879,30 @@ def fit_mgp_tcn(decomposition_method, add_diag, losstype, n_hidden, levels, kern
                 va_auc = roc_auc_score(va_labels_tot, va_probs_tot)
                 va_prc = average_precision_score(va_labels_tot, va_probs_tot)   
                 best_val = max(va_prc, best_val)
+                best_auroc = max(va_auc, best_auroc)
                 print("Epoch "+str(i)+", seen "+str(total_batches)+" total batches. Validating Took "+\
                       "{:.2f}".format(time()-val_t)+\
                       ". OOS, "+str(0)+" hours back: Loss: "+"{:.5f}".format(va_loss)+ \
                       ", AUC: {:.5f}".format(va_auc)+", AUPR: "+"{:.5f}".format(va_prc))
+
+                write_file = open(log_file,'a+')
+                write_file.write("val_loss,{},{},{:d},{:.5f},{:.5f},{:.5f}\n".format(dataset['split'], dataset['horizon'], i, loss_, va_prc, va_auc))
+                write_file.close()
+
                 _run.log_scalar('train_loss', loss_, total_batches)
                 _run.log_scalar('val_auprc', va_prc, total_batches)
                 sys.stdout.flush()    
             
-                #create a folder and put model checkpoints there
-                saver.save(sess, checkpoint_path + "/epoch_{}".format(i), global_step=total_batches)
+        #create a folder and put model checkpoints there
+        # saver.save(sess, checkpoint_path + "/{}_epoch_{}".format(log_file.split('.')[0],i), global_step=total_batches)
+
         print("Finishing epoch "+"{:d}".format(i)+", took "+\
               "{:.3f}".format(time()-epoch_start))     
-        
+    
+    write_file = open(log_file,'a+')
+    write_file.write("best,{},{},{},{},{:.5f},{:.5f}\n".format(dataset['split'], dataset['horizon'], labels_tr.shape, labels_va.shape, best_val, best_auroc))
+    write_file.close()
+
     return {'Best Validation AUPRC': best_val}
 
 if __name__ == '__main__':

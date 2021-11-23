@@ -40,28 +40,28 @@ echo 'Starting QUERY ...'
 # Run main-query.sql (first part of main.sql up to python)
 
 cmd="dbname=${database} user=${username} options=--search_path=mimiciii"
-psql "$cmd" -f main_query.sql
+# psql "$cmd" -f main_query.sql
 
 # Run the Python script as this step is easier in python:
-python3 $script_dir/compute_sepsis_onset_from_exported_sql_table.py \
-    --file_timepoint $out_dir/sofa_table.csv \
-    --file_ref_time $out_dir/si_starttime.csv \
-    --sofa_threshold 2 \
-    --file_output $out_dir/sofa_delta.csv
+# python3 $script_dir/compute_sepsis_onset_from_exported_sql_table.py \
+#     --file_timepoint $out_dir/sofa_table.csv \
+#     --file_ref_time $out_dir/si_starttime.csv \
+#     --sofa_threshold 2 \
+#     --file_output $out_dir/sofa_delta.csv
 
 # Run main-write.sql (second part of main.sql after python)
-psql "$cmd" -f main_write.sql
+# psql "$cmd" -f main_write.sql
 
 
 # Intermediate dynamic Python processing step to get case-control matching:
-python3 match-controls.py \
-    --casefile $out_dir/q13_cases_hourly_ex1c.csv \
-    --controlfile $out_dir/q13_controls_hourly.csv \
-    --outfile $out_dir/q13_matched_controls.csv
+# python3 match-controls.py \
+#     --casefile $out_dir/q13_cases_hourly_ex1c.csv \
+#     --controlfile $out_dir/q13_controls_hourly.csv \
+#     --outfile $out_dir/q13_matched_controls.csv
 
 # Given case controls are assigned, extract relevant time windows
 # Run second part of main-write (now main-write2.sql)
-psql "$cmd" -f main_write2.sql
+psql "$cmd" -f main_write2.sql 
 
 
 

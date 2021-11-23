@@ -5,6 +5,9 @@
 */
 
 -- only works for metavision as carevue does not accurately document antibiotics
+
+-- abx_poe_list: antibiotics considered in definition of SI
+-- startdate and enddate have timestamps, but are mostly 00:00:00
 DROP TABLE IF EXISTS abx_micro_poe CASCADE;
 CREATE TABLE abx_micro_poe as
 with mv as
@@ -20,6 +23,7 @@ with mv as
 -- get cultures for each icustay
 -- note this duplicates data across ICU stays for the same hospitalization
 -- we later filter down to first ICU stay so not concerned about it
+-- ICU 입원 환자들 중에 우리가 선택한 antibiotics를 맞고 있는 사람을 선택
 , ab_tbl as
 (
   select
@@ -46,6 +50,7 @@ with mv as
   from microbiologyevents
   group by hadm_id, chartdate, charttime, spec_type_desc
 )
+ -- antibiotics를 맞고 있는 환자중에 culture test 결과가 있는 환자가 있다면, 그 data를 붙임 
 , ab_fnl as
 (
   select
@@ -61,12 +66,14 @@ with mv as
     , me24.spec_type_desc as next24_specimen
   from ab_tbl
   -- blood culture in last 72 hours
+  -- culture lab test 결과가 먼저인 경우
   left join me me72
     on ab_tbl.hadm_id = me72.hadm_id
     and ab_tbl.antibiotic_time is not null
     and
     (
       -- if charttime is available, use it
+      -- microbiologyevent(lab test 결과 시간)가 있음과 동시에 72시간 이내 antibiotics가 주어졌을 경우
       (
           ab_tbl.antibiotic_time > me72.charttime
       and ab_tbl.antibiotic_time <= me72.charttime + interval '72' hour
@@ -74,12 +81,14 @@ with mv as
       OR
       (
       -- if charttime is not available, use chartdate
+      -- microbiologyevent(lab test 결과 (시간이 없고) 날짜)가 있음과 동시에 72시간 이내 antibiotics가 주어졌을 경우
           me72.charttime is null
-      and ab_tbl.antibiotic_time > me72.chartdate
+      and ab_tbl.antibiotic_time > me72.chartdate -- 21-10-14 23:59:59 -> 21-10-14 00:00:00 이렇게 될 수도 있다,,
       and ab_tbl.antibiotic_time < me72.chartdate + interval '96' hour -- could equally do this with a date_trunc, but that's less portable
       )
     )
   -- blood culture in subsequent 24 hours
+  -- antibiotics가 먼저인 경우
   left join me me24
     on ab_tbl.hadm_id = me24.hadm_id
     and ab_tbl.antibiotic_time is not null
@@ -95,7 +104,7 @@ with mv as
       (
       -- if charttime is not available, use chartdate
           me24.charttime is null
-      and ab_tbl.antibiotic_time > me24.chartdate
+      and ab_tbl.antibiotic_time > me24.chartdate -- 21-10-14 00:00:00
       and ab_tbl.antibiotic_time <= me24.chartdate + interval '24' hour
       )
     )
@@ -106,9 +115,10 @@ select
   icustay_id
   , antibiotic_name
   , antibiotic_time
-  , last72_charttime
-  , next24_charttime
+  , last72_charttime --me72
+  , next24_charttime --me24
 
+  -- 혼란스러운 코멘트?? 논문에는 sampling(culture time)을 기준으로 한다고 나와있고, 코드도 분석해본 결과 antibiotic time을 사용하지 않음. (me24 또는 me72 에서 사용,,)
   -- time of suspected infection: either the culture time (if before antibiotic), or the antibiotic time
   , case
       when coalesce(last72_charttime,next24_charttime) is null
@@ -136,13 +146,14 @@ select
   end as positiveculture
 from ab_fnl
 )
+
 select
   icustay_id
   , antibiotic_name
   , antibiotic_time
   , last72_charttime
   , next24_charttime
-  , suspected_infection_time
+  , suspected_infection_time -- microbiologyevent time
   -- -- the below two fields are used to extract data - modifying them facilitates sensitivity analyses
   , suspected_infection_time - interval '48' hour as si_starttime --CHANGE FROM ORIGINAL: uncommented this and next line such that start and end time are calculated!
   , suspected_infection_time + interval '24' hour as si_endtime

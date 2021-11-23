@@ -21,6 +21,10 @@ with abx as
     ) as rn
   from abx_micro_poe
 )
+
+-- icustay: 모든 환자들 정보
+-- abx: 같은 환자에 대해 여러 test가 있을 수 있음.
+-- 요약: 중복을 없애는 과정
 select
   ie.icustay_id
   , antibiotic_name
